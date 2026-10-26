@@ -1,0 +1,113 @@
+openapi: 3.0.3
+info:
+  title: Team Task Service API
+  version: 1.0.0
+  description: REST API for team task management with roles, history, Redis cache and analytics.
+servers:
+  - url: http://localhost:8080
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/register:
+    post:
+      security: []
+      summary: Register a user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RegisterRequest'}
+      responses:
+        '201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/User'}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+  /api/v1/login:
+    post:
+      security: []
+      summary: Authenticate and get JWT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LoginRequest'}
+      responses:
+        '200': {description: Authenticated}
+        '401': {description: Invalid credentials}
+  /api/v1/teams:
+    get:
+      summary: List current user's teams
+      responses: {'200': {description: Team list}}
+    post:
+      summary: Create a team
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [name], properties: {name: {type: string}}}}}
+      responses: {'201': {description: Team created}}
+  /api/v1/teams/{id}/invite:
+    post:
+      summary: Invite a user or change member role
+      parameters: [{$ref: '#/components/parameters/Id'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [user_id, role], properties: {user_id: {type: integer, format: int64}, role: {type: string, enum: [admin, member]}}}}}
+      responses: {'204': {description: Updated}, '403': {$ref: '#/components/responses/Forbidden'}}
+  /api/v1/tasks:
+    get:
+      summary: Filtered and paginated task list
+      parameters:
+        - {name: team_id, in: query, required: true, schema: {type: integer, format: int64}}
+        - {name: status, in: query, schema: {type: string, enum: [todo, in_progress, done]}}
+        - {name: assignee_id, in: query, schema: {type: integer, format: int64}}
+        - {name: limit, in: query, schema: {type: integer, default: 20, maximum: 100}}
+        - {name: offset, in: query, schema: {type: integer, default: 0}}
+      responses: {'200': {description: Task list}, '403': {$ref: '#/components/responses/Forbidden'}}
+    post:
+      summary: Create a task
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/CreateTaskRequest'}}}
+      responses: {'201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/Task'}}}}}
+  /api/v1/tasks/{id}:
+    put:
+      summary: Update a task using optimistic locking
+      parameters: [{$ref: '#/components/parameters/Id'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/UpdateTaskRequest'}}}
+      responses: {'200': {description: Updated}, '409': {description: Version conflict}}
+  /api/v1/tasks/{id}/history:
+    get:
+      summary: Task change history
+      parameters: [{$ref: '#/components/parameters/Id'}]
+      responses: {'200': {description: History}}
+  /api/v1/tasks/{id}/comments:
+    get:
+      summary: List task comments
+      parameters: [{$ref: '#/components/parameters/Id'}]
+      responses: {'200': {description: Comments}}
+    post:
+      summary: Add a task comment
+      parameters: [{$ref: '#/components/parameters/Id'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [content], properties: {content: {type: string}}}}}
+      responses: {'201': {description: Comment created}}
+  /api/v1/teams/{id}/stats:
+    get:
+      summary: Team analytics for owner or admin
+      parameters: [{$ref: '#/components/parameters/Id'}]
+      responses: {'200': {description: Metrics}, '403': {$ref: '#/components/responses/Forbidden'}}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
+  parameters:
+    Id: {name: id, in: path, required: true, schema: {type: integer, format: int64}}
+  responses:
+    BadRequest: {description: Validation failed}
+    Forbidden: {description: Not a member or insufficient role}
+  schemas:
+    RegisterRequest: {type: object, required: [email, password, name], properties: {email: {type: string, format: email}, password: {type: string, minLength: 8}, name: {type: string}}}
+    LoginRequest: {type: object, required: [email, password], properties: {email: {type: string, format: email}, password: {type: string}}}
+    User: {type: object, properties: {id: {type: integer, format: int64}, email: {type: string}, name: {type: string}, created_at: {type: string, format: date-time}}}
+    Task: {type: object, properties: {id: {type: integer, format: int64}, team_id: {type: integer, format: int64}, title: {type: string}, description: {type: string}, status: {type: string}, created_by: {type: integer, format: int64}, assignee_id: {type: integer, format: int64, nullable: true}, version: {type: integer, format: int64}}}
+    CreateTaskRequest: {type: object, required: [team_id, title], properties: {team_id: {type: integer, format: int64}, title: {type: string}, description: {type: string}, status: {type: string, enum: [todo, in_progress, done]}, assignee_id: {type: integer, format: int64, nullable: true}}}
+    UpdateTaskRequest: {type: object, required: [version], properties: {title: {type: string}, description: {type: string}, status: {type: string, enum: [todo, in_progress, done]}, assignee_id: {type: integer, format: int64, nullable: true}, version: {type: integer, format: int64}}}
